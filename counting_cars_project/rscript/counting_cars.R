@@ -1,3 +1,6 @@
+
+library(rsconnect)
+
 library(ggplot2)
 library(dplyr)
 library(tidyverse)
@@ -8,11 +11,18 @@ library(DT)
 library(plotly)
 library(bslib)
 library(shinycssloaders)
-
+library(httr)
 rm(list = ls())
 
-setwd('/Users/basilchattha/Documents/r_projects/counting_cars_project/data')
-df <- read_excel('speed_counting_cars.xlsx', .name_repair = 'universal')
+
+url <- "https://github.com/rohaanfarrukh/data332_counting_cars/raw/refs/heads/main/counting_cars_project/rscript/speed_counting_cars.xlsx"
+
+# Download to a temp file
+temp_file <- tempfile(fileext = ".xlsx")
+GET(url, write_disk(temp_file, overwrite = TRUE))
+
+# Now read it using read_excel
+df <- read_excel(temp_file, .name_repair = "universal")
 
 # UI
 ui <- fluidPage(
@@ -49,6 +59,9 @@ ui <- fluidPage(
         tabPanel("Flashing Sign Effect",
                  h4("Effect of Flashing Sign on Speed (Flashing = 1)"),
                  withSpinner(plotOutput("flashing_effect_plot"))
+        ),
+        tabPanel("Min / Max / Mean Speeds",
+                 withSpinner(plotOutput("min_max_mean_plot"))
         )
       )
     )
@@ -136,6 +149,34 @@ server <- function(input, output, session) {
            y = "Speed (mph)") +
       theme_minimal()
   })
+  output$min_max_mean_plot <- renderPlot({
+    stats_df <- filtered_data() %>%
+      pivot_longer(cols = c(init_speed, final_speed), 
+                   names_to = "Speed_Type", 
+                   values_to = "Speed") %>%
+      group_by(vehicle_type, Speed_Type) %>%
+      summarise(
+        Min = min(Speed, na.rm = TRUE),
+        Mean = mean(Speed, na.rm = TRUE),
+        Max = max(Speed, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      pivot_longer(cols = c(Min, Mean, Max), names_to = "Stat", values_to = "Value") %>%
+      mutate(
+        Speed_Type = recode(Speed_Type, init_speed = "Initial", final_speed = "Final")
+      )
+    
+    ggplot(stats_df, aes(x = vehicle_type, y = Value, fill = Stat)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      facet_wrap(~ Speed_Type) +
+      labs(title = "Min, Mean, and Max Speeds by Vehicle Type",
+           x = "Vehicle Type",
+           y = "Speed (mph)",
+           fill = "Statistic") +
+      theme_minimal()
+  })
+  
 }
 
 shinyApp(ui = ui, server = server)
+
